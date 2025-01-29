@@ -1,0 +1,58 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="col-md-3">
+    <div class="input-group">
+        <select class="form-select" @bind="SearchTerm" @bind:after="HandleSearchTermChange">
+            <option value="all">All</option>
+            <option value="title">Title</option>
+            <option value="author">Author</option>
+            <option value="genre">Genre</option>
+        </select>
+        <input type="text" class="form-control" placeholder="Search..." @bind="SearchParam" @bind:after="HandleSearchParamChange" />
+        <button class="btn btn-outline-secondary" type="button" @onclick="SearchBooks">Search</button>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string? SearchParam { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> SearchParamChanged { get; set; }
+
+
+    [Parameter]
+    public string? SearchTerm { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> SearchTermChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnSearch { get; set; }
+
+    private async Task HandleSearchParamChange()
+    {
+        if (SearchParamChanged.HasDelegate)
+        {
+            await SearchParamChanged.InvokeAsync(SearchParam);
+        }
+         await SearchBooks();
+    }
+
+    private async Task HandleSearchTermChange()
+    {
+        if (SearchTermChanged.HasDelegate)
+        {
+            await SearchTermChanged.InvokeAsync(SearchTerm);
+        }
+        await SearchBooks();
+    }
+
+    private async Task SearchBooks()
+    {
+        if (OnSearch.HasDelegate)
+        {
+            await OnSearch.InvokeAsync();
+        }
+    }
+}

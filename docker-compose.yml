@@ -1,0 +1,27 @@
+version: '3.8'
+services:
+  bcms_api:
+    build:
+      context: ./src/BCMS_API
+      dockerfile: Dockerfile
+    ports:
+      - "5202:80"
+    environment:
+      - ASPNETCORE_URLS=http://*:80
+    networks:
+      - app_network
+  bcms_ui:
+    build:
+      context: ./src/BCMS_UI
+      dockerfile: Dockerfile
+    ports:
+      - "5294:80"
+    environment:
+      - ASPNETCORE_URLS=http://*:80
+    networks:
+      - app_network
+    depends_on:
+      - bcms_api
+networks:
+  app_network:
+    driver: bridge

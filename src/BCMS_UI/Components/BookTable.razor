@@ -1,0 +1,44 @@
+﻿@using BCMS_UI.Models
+
+@if(Books != null && Books.Count > 0)
+{
+<table class="table table-striped">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Author</th>
+            <th>Genre</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var book in Books)
+        {
+            <tr>
+                <td>@book.Title</td>
+                <td>@book.Author</td>
+                <td>@book.Genre</td>
+                <td>
+                    <button class="btn btn-sm btn-primary" @onclick="() => OnEdit.InvokeAsync(book)">Edit</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => OnDelete.InvokeAsync(book.Id)">Delete</button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+}
+else
+{
+  <p> No books found</p>
+}
+
+@code {
+    [Parameter]
+    public List<BookDto>? Books { get; set; }
+
+    [Parameter]
+    public EventCallback<int> OnDelete { get; set; }
+
+    [Parameter]
+    public EventCallback<BookDto> OnEdit { get; set; }
+}

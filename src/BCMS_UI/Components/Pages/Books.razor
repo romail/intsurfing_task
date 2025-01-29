@@ -1,0 +1,443 @@
+@page "/books"
+@rendermode InteractiveServer
+
+@using BCMS_UI.Components
+@using BCMS_UI.Models
+@using BCMS_UI.Services
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components.Forms
+@using System.Text
+@inject IBookService BookService
+@inject HubConnectionBuilder HubConnectionBuilder
+@inject NavigationManager NavigationManager
+
+<PageTitle>Book Catalog</PageTitle>
+
+<div class="mb-3">
+    <div class="row">
+        <Search @bind-SearchParam="searchParam" @bind-SearchTerm="searchTerm" OnSearch="SearchBooks" />
+        <SortDropdown @bind-SelectedSort="sortBy" OnSort="SortChange" />
+        <div class="col-md-2">
+            <button type="button" class="btn btn-primary" @onclick="ToggleAddBookForm">
+                @if (!showAddBookForm)
+                {
+                    <span>Add New Book</span>
+                }
+                else
+                {
+                    <span>Close</span>
+                }
+            </button>
+        </div>
+        <div class="col-md-3">
+            <div class="form-group">
+                <label for="fileInput">Choose a CSV file:</label>
+                <input type="file" class="form-control-file" id="fileInput" @ref="fileInput" accept=".csv"
+                    @onchange="HandleFileSelected" />
+                <small class="form-text text-muted">Please select a CSV file for import.</small>
+                <button type="button" class="btn btn-secondary" disabled="@fileNotSelected"
+                    @onclick="HandleUploadFile">Import CSV</button>
+            </div>
+        </div>
+    </div>
+    @if (showAddBookForm)
+    {
+        <AddBookForm Book="newBook" OnAdd="AddBook" />
+    }
+</div>
+
+<BookTable Books="books" OnDelete="HandleDeleteBook" OnEdit="HandleEditBook" />
+<Pagination ActivePageNumber="pageNumber" TotalPages="totalPages" DisplayPages="5" FirstLinkIcon="First"
+    PreviousLinkIcon="Prev" NextLinkIcon="Next" LastLinkIcon="Last" OnPageChange="HandlePageChange" />
+
+@if (showModal)
+{
+    <EditBookModal Book="editedBook" @bind-ShowModal="showModal" OnSave="UpdateBook" />
+}
+
+<script>
+    window.getFileFromInput = async function () {
+        const element = document.getElementById('fileInput');
+        if (element && element.files && element.files.length > 0) {
+            return element.files[0];
+        }
+        return null;
+    };
+
+    window.resetFileInput = async function () {
+        const element = document.getElementById('fileInput');
+        if (element) {
+            element.value = '';
+        }
+    };
+
+    window.getFileSize = async function (file) {
+        if (file) {
+            return file.size;
+        }
+        return null;
+    };
+
+    window.getFileName = async function (file) {
+        if (file) {
+            return file.name;
+        }
+        return null;
+    };
+
+    window.getFileType = async function (file) {
+        if (file) {
+            return file.type;
+        }
+        return null;
+    };
+
+    window.getFileBytes = async function (file, dotnetHelper) {
+        if (file) {
+            try {
+                const buffer = await file.arrayBuffer();
+                const uint8Array = new Uint8Array(buffer);
+                await dotnetHelper.invokeMethodAsync('ReceiveFileBytes', uint8Array);
+                return true;
+            } catch (error) {
+                console.error('Error reading file:', error);
+                return false;
+            }
+        }
+        return false;
+    };
+</script>
+@code {
+    [Inject]
+    public IJSRuntime JSRuntimeInstance { get; set; }
+    private List<BookDto> books = new List<BookDto>();
+    private int pageNumber = 1;
+    private int pageSize = 5;
+    private string? sortBy;
+    private int totalPages;
+    private Book newBook = new();
+    private bool showAddBookForm;
+    private bool showModal;
+    private Book editedBook = new();
+    private ElementReference fileInput;
+    private string? searchParam;
+    private string? searchTerm;
+    private int booksCount;
+    private bool fileNotSelected = true;
+    private string errorMessage;
+    private bool showErrorComponent = false;
+    private int uploadProgress;
+    private bool showUploadProgress;
+    private bool isUploading = false;
+    private byte[]? fileBytes;
+    private bool isFileReceived;
+
+    private HubConnection hubConnection;
+
+    private async Task ShowError(string message)
+    {
+        errorMessage = message;
+        showErrorComponent = true;
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var url = NavigationManager.ToAbsoluteUri("/hub/bookhub");
+        hubConnection = HubConnectionBuilder.WithUrl("http://localhost:5202/hub/bookhub")
+        .WithAutomaticReconnect().Build();
+
+        hubConnection.On("ReceiveUpdate", async () =>
+        {
+            await LoadBooksAsync();
+        });
+
+        await hubConnection.StartAsync();
+        await LoadBooksAsync();
+        StateHasChanged();
+
+    }
+
+    private async Task LoadBooksAsync()
+    {
+        var parameters = BuildSearchParameters();
+
+        var booksResult = await BookService.GetBooksAsync(parameters);
+        this.books = booksResult.books;
+        this.booksCount = booksResult.totalCount;
+
+        if (books.Count > 0)
+        {
+            totalPages = (int)Math.Ceiling((double)booksCount / pageSize);
+        }
+        else
+        {
+            totalPages = 0;
+        }
+    }
+
+    private BookQueryParameters BuildSearchParameters()
+    {
+        BookQueryParameters parameters = new BookQueryParameters
+        {
+            PageNumber = pageNumber,
+            PageSize = pageSize,
+            SortBy = sortBy
+        };
+
+        if (!string.IsNullOrEmpty(searchTerm) && !string.IsNullOrEmpty(searchParam))
+        {
+            switch (searchTerm.ToLower())
+            {
+                case "title":
+                    parameters.Title = searchParam;
+                    break;
+                case "author":
+                    parameters.Author = searchParam;
+                    break;
+                case "genre":
+                    parameters.Genre = searchParam;
+                    break;
+                case "all":
+                    parameters.Title = searchParam;
+                    parameters.Author = searchParam;
+                    parameters.Genre = searchParam;
+                    break;
+            }
+        }
+
+        return parameters;
+    }
+
+    private async Task HandlePageChange(int page)
+    {
+        pageNumber = page;
+        await LoadBooksAsync();
+    }
+
+    private async Task AddBook()
+    {
+        if (newBook == null || string.IsNullOrEmpty(newBook.Title) || string.IsNullOrEmpty(newBook.Author)
+        || string.IsNullOrEmpty(newBook.Genre))
+        {
+            await JSRuntimeInstance.InvokeVoidAsync("eval", $"document.getElementById('{fileInput.Id}').value = '';");
+            return;
+        }
+        await BookService.AddBookAsync(newBook);
+        newBook = new Book();
+        await LoadBooksAsync();
+        ToggleAddBookForm();
+    }
+
+    private async Task HandleDeleteBook(int id)
+    {
+        bool confirmDelete = await JSRuntimeInstance.InvokeAsync<bool>("confirm", "Are you sure you want to delete this book?");
+        if (confirmDelete)
+        {
+            var isDeleted = await BookService.DeleteBookAsync(id);
+            if (isDeleted)
+                await LoadBooksAsync();
+            else
+                await JSRuntimeInstance.InvokeVoidAsync("alert", "An error occurred while deleting the book!");
+        }
+    }
+
+    private void HandleEditBook(BookDto book)
+    {
+        editedBook = new Book
+        {
+            Id = book.Id,
+            Title = book.Title,
+            Author = book.Author,
+            Genre = book.Genre
+        };
+        ToggleModal();
+    }
+
+    private void ToggleModal()
+    {
+        showModal = !showModal;
+    }
+
+    private async Task UpdateBook()
+    {
+        if (editedBook == null || string.IsNullOrEmpty(editedBook.Title) || string.IsNullOrEmpty(editedBook.Author)
+        || string.IsNullOrEmpty(editedBook.Genre))
+        {
+            await JSRuntimeInstance.InvokeVoidAsync("alert", "Please fill in all the fields!");
+            return;
+        }
+        var updatedBook = await BookService.UpdateBookAsync(editedBook.Id, editedBook);
+        if (updatedBook != null)
+        {
+            await LoadBooksAsync();
+            ToggleModal();
+        }
+        else
+            await JSRuntimeInstance.InvokeVoidAsync("alert", "An error occurred while updating the book!");
+    }
+
+    private void ToggleAddBookForm()
+    {
+        showAddBookForm = !showAddBookForm;
+    }
+
+    [JSInvokable]
+    public void ReceiveFileBytes(byte[] bytes)
+    {
+        if (isFileReceived)
+        {
+            return;
+        }
+        isFileReceived = true;
+        fileBytes = bytes;
+    }
+
+    private async Task HandleUploadFile()
+    {
+        if (isUploading)
+        {
+            return;
+        }
+        isUploading = true;
+        try
+        {
+            if (fileInput.Id is null)
+            {
+                await ShowError("Could not get the file input element.");
+                return;
+            }
+
+            var file = await JSRuntimeInstance.InvokeAsync<IJSObjectReference>("getFileFromInput");
+            if (file is null)
+            {
+                await ShowError("Could not get the selected file.");
+                return;
+            }
+
+            var fileSize = await JSRuntimeInstance.InvokeAsync<long>("getFileSize", file);
+            var fileName = await JSRuntimeInstance.InvokeAsync<string>("getFileName", file);
+            var fileType = await JSRuntimeInstance.InvokeAsync<string>("getFileType", file);
+
+            if (!await ValidateFile(fileSize, fileName, fileType))
+            {
+                return;
+            }
+
+            using var dotNetHelper = DotNetObjectReference.Create(this);
+
+            var success = await JSRuntimeInstance.InvokeAsync<bool>("getFileBytes", file, dotNetHelper);
+            if (!success)
+            {
+                await ShowError("Could not read the file");
+                return;
+            }
+
+            using var stream = new MemoryStream(fileBytes);
+            var content = new MultipartFormDataContent();
+            content.Add(new StreamContent(stream), "file", fileName);
+
+            uploadProgress = 0;
+            showUploadProgress = true;
+            StateHasChanged();
+
+            await UploadFileAsync(content);
+        }
+        catch (JSException ex)
+        {
+            await ShowError($"JS error: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+            await ResetUpload();
+        }
+    }
+
+    private async Task<bool> ValidateFile(long fileSize, string fileName, string fileType)
+    {
+        if (fileSize > 5 * 1024 * 1024)
+        {
+            await ShowError("File size exceeds the limit (5MB).");
+            return false;
+        }
+
+        if (fileType != "text/csv" && !fileName.ToLower().EndsWith(".csv"))
+        {
+            await ShowError("Only CSV files are allowed.");
+            return false;
+        }
+        return true;
+    }
+
+    private async Task UploadFileAsync(MultipartFormDataContent content)
+    {
+        try
+        {
+            var result = await BookService.UploadBooksAsync(content);
+
+            if (result != null)
+            {
+                await JSRuntimeInstance.InvokeVoidAsync("alert", result);
+            }
+            else
+            {
+                await ShowError("File upload failed");
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            await ShowError($"Upload failed: {ex.Message}. Server might be unavailable or returned an error.");
+        }
+        catch (Exception ex)
+        {
+            await ShowError($"Upload failed: {ex.Message}");
+        }
+    }
+
+    private async Task ResetUpload()
+    {
+        await LoadBooksAsync();
+        await JSRuntimeInstance.InvokeVoidAsync("resetFileInput");
+        showUploadProgress = false;
+        StateHasChanged();
+    }
+
+    private void HandleFileSelected(ChangeEventArgs e)
+    {
+        fileNotSelected = e.Value is null ||
+        (e.Value is string && string.IsNullOrEmpty((string)e.Value)) ||
+        (e.Value is object[] arr && arr.Length == 0);
+        StateHasChanged();
+    }
+
+    private async Task SearchBooks()
+    {
+        pageNumber = 1;
+        await LoadBooksAsync();
+    }
+
+    private async Task SortChange()
+    {
+        pageNumber = 1;
+        await LoadBooksAsync();
+    }
+
+    public void Dispose()
+    {
+        _ = hubConnection?.StopAsync();
+        GC.SuppressFinalize(this);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.StopAsync();
+            await hubConnection.DisposeAsync();
+        }
+        GC.SuppressFinalize(this);
+    }
+}

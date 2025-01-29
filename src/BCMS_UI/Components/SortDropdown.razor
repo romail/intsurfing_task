@@ -1,0 +1,41 @@
+@using Microsoft.AspNetCore.Components;
+
+<div class="col-md-3">
+    <div class="input-group">
+       <select class="form-select" @bind="SelectedSort" @bind:after="HandleSortChange">
+          <option value="" disabled selected>Select Sort Criteria</option>
+          <option value="title">Title</option>
+          <option value="author">Author</option>
+          <option value="genre">Genre</option>
+       </select>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string? SelectedSort { get; set; }
+
+    [Parameter]
+    public EventCallback<string?> SelectedSortChanged { get; set; } 
+
+    [Parameter]
+    public EventCallback OnSort { get; set; }
+
+    private async Task SortChange()
+    {
+        if (SelectedSortChanged.HasDelegate)
+        {
+            await OnSort.InvokeAsync();
+        }
+    }
+
+    private async Task HandleSortChange()
+    {
+        if (SelectedSortChanged.HasDelegate)
+        {
+            await SelectedSortChanged.InvokeAsync(SelectedSort);
+        }
+
+        await SortChange();
+    }
+}

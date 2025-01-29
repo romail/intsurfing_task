@@ -1,0 +1,70 @@
+@using Microsoft.AspNetCore.Components
+@using BCMS_UI.Models
+@using Microsoft.AspNetCore.Components.Forms;
+
+@if (ShowModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Book</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CloseModal"></button>
+                </div>
+                <EditForm Model="@Book" OnValidSubmit="@HandleSave">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="editTitle" class="form-label">Title:</label>
+                            <InputText id="editTitle" class="form-control" @bind-Value="Book.Title" />
+                            <ValidationMessage For="@(() => Book.Title)" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="editAuthor" class="form-label">Author:</label>
+                            <InputText id="editAuthor" class="form-control" @bind-Value="Book.Author" />
+                            <ValidationMessage For="@(() => Book.Author)" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="editGenre" class="form-label">Genre:</label>
+                            <InputText id="editGenre" class="form-control" @bind-Value="Book.Genre" />
+                            <ValidationMessage For="@(() => Book.Genre)" />
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public Book Book { get; set; } = new();
+
+    [Parameter]
+    public bool ShowModal { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> ShowModalChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnSave { get; set; }
+
+    private async Task CloseModal()
+    {
+        ShowModal = false;
+        if (ShowModalChanged.HasDelegate)
+        {
+            await ShowModalChanged.InvokeAsync(ShowModal);
+        }
+    }
+
+    private async Task HandleSave()
+    {
+      await OnSave.InvokeAsync();
+    }
+}

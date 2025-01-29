@@ -1,0 +1,32 @@
+@using Microsoft.AspNetCore.Components
+@using BCMS_UI.Models
+
+<div class="card mt-3">
+    <div class="card-header">
+        Add Book
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label for="title" class="form-label">Title:</label>
+            <input type="text" id="title" class="form-control" @bind="Book.Title" />
+        </div>
+        <div class="mb-3">
+            <label for="author" class="form-label">Author:</label>
+            <input type="text" id="author" class="form-control" @bind="Book.Author" />
+        </div>
+        <div class="mb-3">
+            <label for="genre" class="form-label">Genre:</label>
+            <input type="text" id="genre" class="form-control" @bind="Book.Genre" />
+        </div>
+        <button type="button" class="btn btn-primary" @onclick="OnAdd">Add</button>
+    </div>
+</div>
+
+
+@code {
+    [Parameter]
+    public Book Book { get; set; } = new();
+
+    [Parameter]
+    public EventCallback OnAdd { get; set; }
+}
